@@ -7,7 +7,8 @@
 namespace Plugins {
 
 	enum ePluginMessageType {
-		PMT_Initialise = 0,
+		PMT_NULL = 0,
+		PMT_Initialise,
 		PMT_Start,
 		PMT_Directive,
 		PMT_Connected,
@@ -32,25 +33,35 @@ namespace Plugins {
 	class CPluginMessage
 	{
 	public:
-		CPluginMessage() : m_Type(PMT_Start), m_HwdID(-1), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1), m_Message("") { };
-		CPluginMessage(ePluginMessageType Type, int HwdID, const std::string & Message) : m_Type(Type), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1), m_Message(Message) { };
-		CPluginMessage(ePluginMessageType Type, int HwdID, int Unit, const std::string & Message, const int level, const int hue) : m_Type(Type), m_HwdID(HwdID), m_Unit(Unit), m_iLevel(level), m_iHue(hue), m_iValue(-1), m_Message(Message) { };
-		CPluginMessage(ePluginMessageType Type, ePluginDirectiveType dType, int HwdID, const std::string & Message) : m_Type(Type), m_Directive(dType), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1), m_Message(Message) { };
-		CPluginMessage(ePluginMessageType Type, ePluginDirectiveType dType, int HwdID) : m_Type(Type), m_Directive(dType), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1) {};
-		CPluginMessage(ePluginMessageType Type, ePluginDirectiveType dType, int HwdID, int Value) : m_Type(Type), m_Directive(dType), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(Value) {};
-		CPluginMessage(ePluginMessageType Type, int HwdID) : m_Type(Type), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1) {	};
+		CPluginMessage() : 
+			m_Type(PMT_NULL), m_HwdID(-1), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1), m_Message(""), m_Object(NULL) { m_When = time(0); };
+		CPluginMessage(ePluginMessageType Type, int HwdID, const std::string & Message) : 
+			m_Type(Type), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1), m_Message(Message), m_Object(NULL) { m_When = time(0); };
+		CPluginMessage(ePluginMessageType Type, int HwdID, int Unit, const std::string & Message, const int level, const int hue) : 
+			m_Type(Type), m_HwdID(HwdID), m_Unit(Unit), m_iLevel(level), m_iHue(hue), m_iValue(-1), m_Message(Message), m_Object(NULL) { m_When = time(0); };
+		CPluginMessage(ePluginMessageType Type, ePluginDirectiveType dType, int HwdID, const std::string & Message) : 
+			m_Type(Type), m_Directive(dType), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1), m_Message(Message), m_Object(NULL) { m_When = time(0); };
+		CPluginMessage(ePluginMessageType Type, ePluginDirectiveType dType, int HwdID) : 
+			m_Type(Type), m_Directive(dType), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1), m_Object(NULL) { m_When = time(0); };
+		CPluginMessage(ePluginMessageType Type, ePluginDirectiveType dType, int HwdID, int Value) : 
+			m_Type(Type), m_Directive(dType), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(Value), m_Object(NULL) { m_When = time(0); };
+		CPluginMessage(ePluginMessageType Type, int HwdID) : 
+			m_Type(Type), m_HwdID(HwdID), m_Unit(-1), m_iLevel(-1), m_iHue(-1), m_iValue(-1), m_Object(NULL) { m_When = time(0); };
 		void operator=(const CPluginMessage& m)
 		{
 			m_Type = m.m_Type;
 			m_Directive = m.m_Directive;
 			m_HwdID = m.m_HwdID;
 			m_Unit = m.m_Unit;
+			m_When = m.m_When;
 			m_Message = m.m_Message;
 			m_iValue = m.m_iValue;
 			m_iLevel = m.m_iLevel;
 			m_iHue = m.m_iHue;
 			m_Address = m.m_Address;
 			m_Port = m.m_Port;
+			m_Operation = m.m_Operation;
+			m_Object = m.m_Object;
 		}
 
 		~CPluginMessage(void) {};
@@ -59,12 +70,15 @@ namespace Plugins {
 		ePluginDirectiveType	m_Directive;
 		int						m_HwdID;
 		int						m_Unit;
+		time_t					m_When;
 		std::string				m_Message;
 		int						m_iValue;
 		int						m_iLevel;
 		int						m_iHue;
 		std::string				m_Address;
 		std::string				m_Port;
+		std::string				m_Operation;
+		void*					m_Object;
 	};
 
 	class CPluginProtocol
@@ -73,14 +87,15 @@ namespace Plugins {
 		std::string		m_sRetainedData;
 
 	public:
-		virtual void	ProcessMessage(const int HwdID, std::string& ReadData);
-		virtual void	Flush(const int HwdID);
-		virtual int		Length() { return m_sRetainedData.length(); };
+		virtual void		ProcessInbound(const int HwdID, std::string& ReadData);
+		virtual std::string	ProcessOutbound(const CPluginMessage & WriteMessage) { return WriteMessage.m_Message; };
+		virtual void		Flush(const int HwdID);
+		virtual int			Length() { return m_sRetainedData.length(); };
 	};
 
 	class CPluginProtocolLine : CPluginProtocol
 	{
-		virtual void	ProcessMessage(const int HwdID, std::string& ReadData);
+		virtual void	ProcessInbound(const int HwdID, std::string& ReadData);
 	};
 
 	class CPluginProtocolXML : CPluginProtocol
@@ -88,15 +103,34 @@ namespace Plugins {
 	private:
 		std::string		m_Tag;
 	public:
-		virtual void	ProcessMessage(const int HwdID, std::string& ReadData);
+		virtual void	ProcessInbound(const int HwdID, std::string& ReadData);
 	};
 
 	class CPluginProtocolJSON : CPluginProtocol
 	{
-		virtual void	ProcessMessage(const int HwdID, std::string& ReadData);
+		virtual void	ProcessInbound(const int HwdID, std::string& ReadData);
 	};
 
-	class CPluginProtocolHTML : CPluginProtocol {};
+	class CPluginProtocolHTTP : CPluginProtocol
+	{
+	private:
+		int				m_Status;
+		int				m_ContentLength;
+		void*			m_Headers;
+		std::string		m_Username;
+		std::string		m_Password;
+		bool			m_Chunked;
+		size_t			m_RemainingChunk;
+	public:
+		CPluginProtocolHTTP() : m_Status(0), m_ContentLength(0), m_Headers(NULL), m_Chunked(false) {};
+		virtual void		ProcessInbound(const int HwdID, std::string& ReadData);
+		virtual std::string	ProcessOutbound(const CPluginMessage & WriteMessage);
+		void				AuthenticationDetails(std::string Username, std::string Password)
+		{
+			m_Username = Username;
+			m_Password = Password;
+		};
+	};
 
 	class CPluginProtocolMQTT : CPluginProtocol {}; // Maybe?
 
@@ -186,6 +220,12 @@ namespace Plugins {
 		void*			m_PyInterpreter;
 		void*			m_PyModule;
 
+		std::string		m_Username;
+		std::string		m_Password;
+		std::string		m_HomeFolder;
+		std::string		m_Version;
+		std::string		m_Author;
+
 		boost::shared_ptr<boost::thread> m_thread;
 
 		bool StartHardware();
@@ -195,9 +235,6 @@ namespace Plugins {
 		void LogPythonException(const std::string &);
 		bool HandleInitialise();
 		bool HandleStart();
-
-	protected:
-		bool			m_stoprequested;
 
 	public:
 		CPlugin(const int HwdID, const std::string &Name, const std::string &PluginKey);
@@ -214,6 +251,7 @@ namespace Plugins {
 		CPluginTransport*	m_pTransport;
 		void*				m_DeviceDict;
 		bool				m_bDebug;
+		bool				m_stoprequested;
 	};
 
 }

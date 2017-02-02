@@ -542,13 +542,13 @@ bool CScheduler::AdjustScheduleItem(tScheduleItem *pItem, bool bForceAddDay)
 		nth_dow ndm(Occurence, Day, Month);
 		boost::gregorian::date d = ndm.get_date(ltime.tm_year + 1900);
 
-		constructTime(rtime,tm1,ltime.tm_year+1900,pItem->Month,d.day(),pItem->startHour,pItem->startMin,0,isdst);
+		constructTime(rtime, tm1, ltime.tm_year + 1900, pItem->Month, d.day(), pItem->startHour, pItem->startMin, 0, -1);
 
 		if (rtime < atime) //past date/time
 		{
 			//schedule for next year
 			ltime.tm_year++;
-			constructTime(rtime,tm1,ltime.tm_year+1900,pItem->Month,d.day(),pItem->startHour,pItem->startMin,0,isdst);
+			constructTime(rtime, tm1, ltime.tm_year + 1900, pItem->Month, d.day(), pItem->startHour, pItem->startMin, 0, -1);
 		}
 
 		rtime += roffset * 60; // add randomness
@@ -1057,8 +1057,13 @@ namespace http {
 			int rnvalue = 0;
 			m_sql.GetPreferencesVar("ActiveTimerPlan", rnOldvalue);
 			rnvalue = atoi(request::findValue(&req, "ActiveTimerPlan").c_str());
-			if ((rnOldvalue != rnvalue) && ((rnvalue==0) || (rnvalue==1)))
+			if (rnOldvalue != rnvalue)
 			{
+				std::vector<std::vector<std::string> > result;
+				result = m_sql.safe_query("SELECT Name FROM TimerPlans WHERE (ID == %d)", rnvalue);
+				if (result.empty())
+					return; //timerplan not found!
+				_log.Log(LOG_STATUS, "Scheduler Timerplan changed (%d - %s)", rnvalue, result[0][0].c_str());
 				m_sql.UpdatePreferencesVar("ActiveTimerPlan", rnvalue);
 				m_sql.m_ActiveTimerPlan = rnvalue;
 				m_mainworker.m_scheduler.ReloadSchedules();

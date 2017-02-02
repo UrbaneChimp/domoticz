@@ -150,7 +150,7 @@ enum _eHardwareTypes {
 	HTYPE_DomoticzInternal,		//67
 	HTYPE_NefitEastLAN,			//68
 	HTYPE_PanasonicTV,			//69
-	HTYPE_OpenWebNet,			//70
+	HTYPE_OpenWebNetTCP,		//70
 	HTYPE_RaspberryHTU21D,		//71
 	HTYPE_AtagOne,				//72
 	HTYPE_Sterbox,				//73
@@ -177,7 +177,9 @@ enum _eHardwareTypes {
 	HTYPE_PythonPlugin,			//94
 	HTYPE_XiaomiGateway,		//95
 	HTYPE_RaspberryBME280,		//96
-	HTYPE_Arilux,		//97
+	HTYPE_Arilux,				//97
+	HTYPE_OpenWebNetUSB,		//98
+	HTYPE_IntergasInComfortLAN2RF,			//99
 	HTYPE_END
 };
 
@@ -214,7 +216,6 @@ enum _eNotificationTypes
 
 const char *RFX_Type_Desc(const unsigned char i, const unsigned char snum);
 const char *RFX_Type_SubType_Desc(const unsigned char dType, const unsigned char sType);
-const char *RFX_Type_SubType_Values(const unsigned char dType, const unsigned char sType);
 unsigned char Get_Humidity_Level(const unsigned char hlevel);
 const char *RFX_Humidity_Status_Desc(const unsigned char status);
 const char *Switch_Type_Desc(const _eSwitchType sType);
