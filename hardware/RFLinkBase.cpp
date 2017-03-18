@@ -60,10 +60,10 @@ const _tRFLinkStringIntHelper rfswitches[] =
 	{ "Doorbell", sSwitchTypeSelectPlus3 },  // p73  
 	{ "FA20RF", sSwitchTypeFA20 },           // p80
 	{ "Chuango", sSwitchTypeChuango },       // p62
-    { "Plieger", sSwitchTypePlieger },       // p71
-    { "SilverCrest", sSwitchTypeSilvercrest }, // p75
-    { "Mertik", sSwitchTypeMertik },         // p82
-    { "HomeConfort", sSwitchTypeHomeConfort }, // p11
+	{ "Plieger", sSwitchTypePlieger },       // p71
+	{ "SilverCrest", sSwitchTypeSilvercrest }, // p75
+	{ "Mertik", sSwitchTypeMertik },         // p82
+	{ "HomeConfort", sSwitchTypeHomeConfort }, // p11
 	{ "Powerfix", sSwitchTypePowerfix },     // p13
 	{ "TriState", sSwitchTypeTriState },     // p16
 	{ "Deltronic", sSwitchTypeDeltronic },   // p73
@@ -120,6 +120,13 @@ const _tRFLinkStringIntHelper rfswitches[] =
 	{ "KonigSec", sSwitchTypeKonigSec },
 	{ "RM174RF", sSwitchTypeRM174RF },
 	{ "Liwin", sSwitchTypeLiwin },
+	{ "YW_Secu", sSwitchTypeYW_Secu },
+	{ "Mertik_GV60", sSwitchTypeMertik_GV60 },
+	{ "Ningbo64", sSwitchTypeNingbo64 },
+	{ "X2D", sSwitchTypeX2D },
+	{ "HRCMotor", sSwitchTypeHRCMotor },
+	{ "Velleman", sSwitchTypeVelleman },
+	{ "RFCustom", sSwitchTypeRFCustom },
 	{ "", -1 }
 };
 
@@ -939,17 +946,23 @@ bool CRFLinkBase::ParseLine(const std::string &sLine)
 		SendRainSensor(ID, BatteryLevel, float(raincounter), tmp_Name);
 	}
 
-	if (bHaveWindDir && bHaveWindSpeed && bHaveWindGust && bHaveWindChill)
+	if (bHaveWindDir || bHaveWindSpeed || bHaveWindGust || bHaveWindChill)
 	{
-		SendWind(ID, BatteryLevel, round(float(windir)*22.5f), windspeed, windgust, windtemp, windchill, bHaveWindTemp, tmp_Name);
-	}
-	else if (bHaveWindDir && bHaveWindGust)
-	{
-		SendWind(ID, BatteryLevel, round(float(windir)*22.5f), windspeed, windgust, windtemp, windchill, bHaveWindTemp, tmp_Name);
-	}
-	else if (bHaveWindSpeed)
-	{
-		SendWind(ID, BatteryLevel, round(float(windir)*22.5f), windspeed, windgust, windtemp, windchill, bHaveWindTemp, tmp_Name);
+		bool bExists = false;
+		int twindir = 0;float twindspeed = 0;float twindgust = 0;float twindtemp = 0;float twindchill = 0;
+		GetWindSensorValue(ID, twindir, twindspeed, twindgust, twindtemp, twindchill, bHaveWindTemp, bExists);
+#ifdef _DEBUG
+		if (bExists) {
+			_log.Log(LOG_STATUS, "RFLink: id:%d wd %d ws %f wg: %f wt: %f wc: %f status:%d", ID, twindir, twindspeed, twindgust, twindtemp, twindchill, bExists);
+		}
+#endif
+		if (bHaveWindDir) twindir = round(float(windir)*22.5f);
+		if (!bHaveWindSpeed) windspeed = twindspeed;
+		if (!bHaveWindGust) windgust = twindgust;
+		if (!bHaveWindTemp) windtemp = twindtemp;
+		if (!bHaveWindChill) windchill = twindchill;
+
+		SendWind(ID, BatteryLevel, twindir, windspeed, windgust, windtemp, windchill, bHaveWindTemp, tmp_Name);
 	}
     
 	if (bHaveCO2)
@@ -1006,6 +1019,7 @@ bool CRFLinkBase::ParseLine(const std::string &sLine)
 	if (bHaveRGB)
 	{
 		//RRGGBB
+		if (switchcmd == "ON") rgb = 0xffff;
 		SendRGBWSwitch(ID, switchunit, BatteryLevel, rgb, false, tmp_Name);
 	} else
 	if (bHaveRGBW)

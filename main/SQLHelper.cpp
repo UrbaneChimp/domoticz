@@ -32,7 +32,7 @@
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 
-#define DB_VERSION 110
+#define DB_VERSION 111
 
 extern http::server::CWebServerHelper m_webservers;
 extern std::string szWWWFolder;
@@ -512,6 +512,19 @@ const char *sqlCreateHttpLink =
 	"[Enabled] INTEGER DEFAULT 1, "
 	"[IncludeUnit] INTEGER default 0); ";
 
+const char *sqlCreatePushLink =
+"CREATE TABLE IF NOT EXISTS [PushLink] ("
+"[ID] INTEGER PRIMARY KEY, "
+"[PushType] INTEGER, "
+"[DeviceID]  BIGINT NOT NULL, "
+"[DelimitedValue] INTEGER DEFAULT 0, "
+"[TargetType] INTEGER DEFAULT 0, "
+"[TargetVariable] VARCHAR(100), "
+"[TargetDeviceID] INTEGER, "
+"[TargetProperty] VARCHAR(100), "
+"[Enabled] INTEGER DEFAULT 1, "
+"[IncludeUnit] INTEGER default 0); ";
+
 const char *sqlCreateGooglePubSubLink =
 "CREATE TABLE IF NOT EXISTS [GooglePubSubLink] ("
 "[ID] INTEGER PRIMARY KEY, "
@@ -734,6 +747,7 @@ bool CSQLHelper::OpenDatabase()
 	query(sqlCreateEnoceanSensors);
 	query(sqlCreateFibaroLink);
 	query(sqlCreateHttpLink);
+	query(sqlCreatePushLink);
 	query(sqlCreateGooglePubSubLink);
 	query(sqlCreateUserVariables);
 	query(sqlCreateFloorplans);
@@ -1935,7 +1949,6 @@ bool CSQLHelper::OpenDatabase()
 				<< "([Type] = " << HTYPE_Wunderground << ") OR "
 				<< "([Type] = " << HTYPE_DarkSky << ") OR "
 				<< "([Type] = " << HTYPE_AccuWeather << ") OR "
-				<< "([Type] = " << HTYPE_RazberryZWave << ") OR "
 				<< "([Type] = " << HTYPE_OpenZWave << ")"
 				<< ")";
 			result = query(szQuery.str());
@@ -1961,7 +1974,6 @@ bool CSQLHelper::OpenDatabase()
 			szQuery << "SELECT ID FROM Hardware WHERE ( "
 				<< "([Type] = " << HTYPE_DavisVantage << ") OR "
 				<< "([Type] = " << HTYPE_TE923 << ") OR "
-				<< "([Type] = " << HTYPE_RazberryZWave << ") OR "
 				<< "([Type] = " << HTYPE_OpenZWave << ")"
 				<< ")";
 			result = query(szQuery.str());
@@ -2145,6 +2157,23 @@ bool CSQLHelper::OpenDatabase()
 					szQuery2.str("");
 					szQuery2 << "UPDATE Hardware SET Mode1=0, Extra='%s' WHERE (ID=" << id << ")";
 					safe_query(szQuery2.str().c_str(), extraBase64.c_str());
+				}
+			}
+		}
+		if (dbversion < 111)
+		{
+			//SolarEdge API, no need for Serial Number anymore
+			std::stringstream szQuery2;
+			std::vector<std::vector<std::string> > result;
+			szQuery2 << "SELECT ID, Password FROM Hardware WHERE([Type]==" << HTYPE_SolarEdgeAPI << ")";
+			result = query(szQuery2.str());
+			if (result.size() > 0)
+			{
+				std::vector<std::vector<std::string> >::const_iterator itt;
+				for (itt = result.begin(); itt != result.end(); ++itt)
+				{
+					std::vector<std::string> sd = *itt;
+					safe_query("UPDATE Hardware SET Username='%q', Password='' WHERE (ID=%s)", sd[1].c_str(), sd[0].c_str());
 				}
 			}
 		}
@@ -3327,6 +3356,7 @@ uint64_t CSQLHelper::UpdateValueInt(const int HardwareID, const char* ID, const 
 		else
 		{
 			if (
+				(stype == STYPE_DoorContact) ||
 				(stype == STYPE_DoorLock) ||
 				(stype == STYPE_Contact)
 				)
@@ -3405,7 +3435,7 @@ uint64_t CSQLHelper::UpdateValueInt(const int HardwareID, const char* ID, const 
 		std::string lstatus="";
 
 		result = safe_query(
-			"SELECT Name,SwitchType,AddjValue,StrParam1,StrParam2,Options FROM DeviceStatus WHERE (ID = %" PRIu64 ")",
+			"SELECT Name,SwitchType,AddjValue,StrParam1,StrParam2,Options,LastLevel FROM DeviceStatus WHERE (ID = %" PRIu64 ")",
 			ulID);
 		if (result.size()>0)
 		{
@@ -3420,6 +3450,7 @@ uint64_t CSQLHelper::UpdateValueInt(const int HardwareID, const char* ID, const 
 			GetLightStatus(devType, subType, switchtype,nValue, sValue, lstatus, llevel, bHaveDimmer, maxDimLevel, bHaveGroupCmd);
 
 			bool bIsLightSwitchOn=IsLightSwitchOn(lstatus);
+			std::string slevel = sd[6];
 
 			if (((bIsLightSwitchOn) && (llevel != 0) && (llevel != 255)) || (switchtype == STYPE_BlindsPercentage) || (switchtype == STYPE_BlindsPercentageInverted))
 			{
@@ -3428,7 +3459,8 @@ uint64_t CSQLHelper::UpdateValueInt(const int HardwareID, const char* ID, const 
 					"UPDATE DeviceStatus SET LastLevel='%d' WHERE (ID = %" PRIu64 ")",
 					llevel,
 					ulID);
-
+				if (bUseOnOffAction)
+				    slevel = boost::lexical_cast<std::string>(llevel);
 			}
 
 			if (bUseOnOffAction)
@@ -3438,12 +3470,8 @@ uint64_t CSQLHelper::UpdateValueInt(const int HardwareID, const char* ID, const 
 				std::string OffAction=sd[4];
 				std::string Options=sd[5];
 
-				if(devType==pTypeEvohome)//would this be ok to extend as a general purpose feature?
+				if(devType==pTypeEvohome)
 				{
-					stdreplace(OnAction, "{deviceid}", ID);
-					stdreplace(OnAction, "{status}", lstatus);
-					//boost::replace_all(OnAction, ID);//future expansion
-					//boost::replace_all(OnAction, "{status}", lstatus);
 					bIsLightSwitchOn=true;//Force use of OnAction for all actions
 
 				} else if (switchtype == STYPE_Selector) {
@@ -3451,7 +3479,15 @@ uint64_t CSQLHelper::UpdateValueInt(const int HardwareID, const char* ID, const 
 					OnAction = CURLEncode::URLDecode(GetSelectorSwitchLevelAction(BuildDeviceOptions(Options, true), llevel));
 					OffAction = CURLEncode::URLDecode(GetSelectorSwitchLevelAction(BuildDeviceOptions(Options, true), 0));
 				}
-
+				if (bIsLightSwitchOn) {
+					stdreplace(OnAction, "{level}", slevel);
+					stdreplace(OnAction, "{status}", lstatus);
+					stdreplace(OnAction, "{deviceid}", ID);
+				} else {
+					stdreplace(OffAction, "{level}", slevel);
+					stdreplace(OffAction, "{status}", lstatus);
+					stdreplace(OffAction, "{deviceid}", ID);
+				}
 				HandleOnOffAction(bIsLightSwitchOn, OnAction, OffAction);
 			}
 
@@ -3529,6 +3565,7 @@ uint64_t CSQLHelper::UpdateValueInt(const int HardwareID, const char* ID, const 
 						(switchtype == STYPE_Motion) ||
 						(switchtype == STYPE_Dimmer) ||
 						(switchtype == STYPE_PushOn) ||
+						(switchtype == STYPE_DoorContact) ||
 						(switchtype == STYPE_DoorLock) ||
 						(switchtype == STYPE_Selector)
 						)
@@ -5159,14 +5196,19 @@ void CSQLHelper::AddCalendarUpdateMeter()
 				(devType!=pTypeWEIGHT)
 				)
 			{
-				//Insert the last (max) counter value into the meter table to get the "today" value correct.
-				result=safe_query(
-					"INSERT INTO Meter (DeviceRowID, Value, Date) "
-					"VALUES ('%" PRIu64 "', '%q', '%q')",
-					ID,
-					sd[1].c_str(),
-					szDateEnd
+				result = safe_query("SELECT Value FROM Meter WHERE (DeviceRowID='%" PRIu64 "') ORDER BY ROWID DESC LIMIT 1", ID);
+				if (result.size() > 0)
+				{
+					std::vector<std::string> sd = result[0];
+					//Insert the last (max) counter value into the meter table to get the "today" value correct.
+					result = safe_query(
+						"INSERT INTO Meter (DeviceRowID, Value, Date) "
+						"VALUES ('%" PRIu64 "', '%q', '%q')",
+						ID,
+						sd[0].c_str(),
+						szDateEnd
 					);
+				}
 			}
 		}
 		else
@@ -6470,73 +6512,135 @@ void CSQLHelper::CheckDeviceTimeout()
 {
 	int TimeoutCheckInterval=1;
 	GetPreferencesVar("SensorTimeoutNotification", TimeoutCheckInterval);
+
 	if (TimeoutCheckInterval==0)
-		return;//disabled
-
-	m_sensortimeoutcounter+=1;
-	if (m_sensortimeoutcounter<TimeoutCheckInterval)
-		return;
-	m_sensortimeoutcounter=0;
-
-	int SensorTimeOut=60;
-	GetPreferencesVar("SensorTimeout", SensorTimeOut);
-	time_t now = mytime(NULL);
-	struct tm stoday;
-	localtime_r(&now,&stoday);
-	now-=(SensorTimeOut*60);
-	struct tm ltime;
-	localtime_r(&now,&ltime);
-
-	std::vector<std::vector<std::string> > result;
-	result = safe_query(
-		"SELECT ID,Name,LastUpdate FROM DeviceStatus WHERE (Used!=0 AND LastUpdate<='%04d-%02d-%02d %02d:%02d:%02d' AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d) ORDER BY Name",
-		ltime.tm_year+1900,ltime.tm_mon+1, ltime.tm_mday, ltime.tm_hour, ltime.tm_min, ltime.tm_sec,
-		pTypeLighting1,
-		pTypeLighting2,
-		pTypeLighting3,
-		pTypeLighting4,
-		pTypeLighting5,
-		pTypeLighting6,
-		pTypeFan,
-		pTypeRadiator1,
-		pTypeLimitlessLights,
-		pTypeSecurity1,
-		pTypeCurtain,
-		pTypeBlinds,
-		pTypeRFY,
-		pTypeChime,
-		pTypeThermostat2,
-		pTypeThermostat3,
-		pTypeThermostat4,
-		pTypeRemote,
-		pTypeGeneralSwitch,
-		pTypeHomeConfort
-		);
-	if (result.size()<1)
-		return;
-
-	uint64_t ulID;
-	std::vector<std::vector<std::string> >::const_iterator itt;
-
-	//check if last timeout_notification is not sent today and if true, send notification
-	for (itt=result.begin(); itt!=result.end(); ++itt)
 	{
-		std::vector<std::string> sd=*itt;
-		std::stringstream s_str( sd[0] );
-		s_str >> ulID;
-		bool bDoSend=true;
-		std::map<uint64_t,int>::const_iterator sitt;
-		sitt=m_timeoutlastsend.find(ulID);
-		if (sitt!=m_timeoutlastsend.end())
+		std::vector<std::vector<std::string> > result;
+		std::string ttype = Notification_Type_Desc(NTYPE_LASTUPDATE, 1);
+		result = safe_query(
+			"SELECT A.DeviceRowID, A.Params, B.Name, B.LastUpdate "
+			"FROM Notifications AS A "
+			"LEFT OUTER JOIN DeviceStatus AS B "
+			"ON A.DeviceRowID=B.ID "
+			"WHERE (A.Params LIKE '%q%%') "
+			"ORDER BY Name",
+			ttype.c_str()
+			);
+		if (result.size()<1)
+			return;
+
+		uint64_t ulID;
+		int SensorTimeOut=60;
+		time_t now = mytime(NULL);
+		struct tm ltime;
+		localtime_r(&now,&ltime); // make sure DST is set correctly
+
+		std::vector<std::vector<std::string> >::const_iterator itt;
+		std::string ltype = Notification_Type_Desc(NTYPE_LASTUPDATE, 0);
+		std::string label = Notification_Type_Label(NTYPE_LASTUPDATE);
+
+		for (itt=result.begin(); itt!=result.end(); ++itt)
 		{
-			bDoSend=(stoday.tm_mday!=sitt->second);
+			std::vector<std::string> sd=*itt;
+			std::vector<std::string> splitparams;
+			std::stringstream(sd[0]) >> ulID;
+			StringSplit(sd[1], ";", splitparams);
+			if (splitparams.size() < 3 || sd[3].size() != 19)
+				continue;
+			bool bWhenIsGreater = (splitparams[1] == ">");
+			std::stringstream(splitparams[2]) >> SensorTimeOut;
+			std::stringstream(sd[3].substr(0,4)) >> ltime.tm_year;
+			ltime.tm_year-=1900;
+			std::stringstream(sd[3].substr(5,2)) >> ltime.tm_mon;
+			ltime.tm_mon--;
+			std::stringstream(sd[3].substr(8,2)) >> ltime.tm_mday;
+			std::stringstream(sd[3].substr(11,2)) >> ltime.tm_hour;
+			std::stringstream(sd[3].substr(14,2)) >> ltime.tm_min;
+			std::stringstream(sd[3].substr(17,2)) >> ltime.tm_sec;
+//			_log.Log(LOG_STATUS, "CheckDeviceTimeout: %s tm_year: %d, tm_mon: %d, tm_mday: %d, tm_hour: %d, "
+//				"tm_min: %d, tm_sec: %d, tm_isdst: %d, bWhenIsGreater: %s, SensorTimeOut: %d",
+//				sd[2].c_str(), ltime.tm_year, ltime.tm_mon, ltime.tm_mday, ltime.tm_hour,
+//				ltime.tm_min, ltime.tm_sec, ltime.tm_isdst,	bWhenIsGreater ? "true" : "false", SensorTimeOut);
+			double diff = difftime(now,mktime(&ltime));
+			if ((diff > SensorTimeOut*60 && bWhenIsGreater)||
+				(diff < SensorTimeOut*60 && !bWhenIsGreater))
+			{
+				char szTmp[300];
+				sprintf(szTmp,"Sensor %s %s: %s [%s %d %s]",sd[2].c_str(),ltype.c_str(),sd[3].c_str(),splitparams[1].c_str(),SensorTimeOut,label.c_str());
+				m_notifications.CheckAndHandleNotification(ulID, sd[2].c_str(), NTYPE_LASTUPDATE, szTmp);
+			}
 		}
-		if (bDoSend)
+	}
+	else
+	{
+		m_sensortimeoutcounter+=1;
+		if (m_sensortimeoutcounter<TimeoutCheckInterval)
+			return;
+		m_sensortimeoutcounter=0;
+
+		int SensorTimeOut=60;
+		GetPreferencesVar("SensorTimeout", SensorTimeOut);
+		time_t now = mytime(NULL);
+		struct tm stoday;
+		localtime_r(&now,&stoday);
+		now-=(SensorTimeOut*60);
+		struct tm ltime;
+		localtime_r(&now,&ltime);
+
+		std::vector<std::vector<std::string> > result;
+		result = safe_query(
+			"SELECT ID, Name, LastUpdate FROM DeviceStatus WHERE (Used!=0 AND LastUpdate<='%04d-%02d-%02d %02d:%02d:%02d' "
+			"AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d "
+			"AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d AND Type!=%d) "
+			"ORDER BY Name",
+			ltime.tm_year+1900,ltime.tm_mon+1, ltime.tm_mday, ltime.tm_hour, ltime.tm_min, ltime.tm_sec,
+			pTypeLighting1,
+			pTypeLighting2,
+			pTypeLighting3,
+			pTypeLighting4,
+			pTypeLighting5,
+			pTypeLighting6,
+			pTypeFan,
+			pTypeRadiator1,
+			pTypeLimitlessLights,
+			pTypeSecurity1,
+			pTypeCurtain,
+			pTypeBlinds,
+			pTypeRFY,
+			pTypeChime,
+			pTypeThermostat2,
+			pTypeThermostat3,
+			pTypeThermostat4,
+			pTypeRemote,
+			pTypeGeneralSwitch,
+			pTypeHomeConfort
+			);
+		if (result.size()<1)
+			return;
+
+		uint64_t ulID;
+		std::vector<std::vector<std::string> >::const_iterator itt;
+
+		//check if last timeout_notification is not sent today and if true, send notification
+		for (itt=result.begin(); itt!=result.end(); ++itt)
 		{
-			char szTmp[300];
-			sprintf(szTmp,"Sensor Timeout: %s, Last Received: %s",sd[1].c_str(),sd[2].c_str());
-			m_notifications.SendMessageEx(0, std::string(""), NOTIFYALL, szTmp, szTmp, std::string(""), 1, std::string(""), true);
-			m_timeoutlastsend[ulID]=stoday.tm_mday;
+			std::vector<std::string> sd=*itt;
+			std::stringstream s_str( sd[0] );
+			s_str >> ulID;
+			bool bDoSend=true;
+			std::map<uint64_t,int>::const_iterator sitt;
+			sitt=m_timeoutlastsend.find(ulID);
+			if (sitt!=m_timeoutlastsend.end())
+			{
+				bDoSend=(stoday.tm_mday!=sitt->second);
+			}
+			if (bDoSend)
+			{
+				char szTmp[300];
+				sprintf(szTmp,"Sensor Timeout: %s, Last Received: %s",sd[1].c_str(),sd[2].c_str());
+				m_notifications.SendMessageEx(0, std::string(""), NOTIFYALL, szTmp, szTmp, std::string(""), 1, std::string(""), true);
+				m_timeoutlastsend[ulID]=stoday.tm_mday;
+			}
 		}
 	}
 }
