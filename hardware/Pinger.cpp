@@ -372,13 +372,13 @@ void CPinger::Do_Ping_Worker(const PingNode &Node)
 		}
 
 		if (ping_host_add(p, host) != 0) {
-			_log.Log(LOG_ERROR, "Pinger: Can't add host ", host, ": ", ping_get_error(p));
+			_log.Log(LOG_ERROR, "Pinger: Can't add host %s: %s", host, ping_get_error(p));
 			break;
 		}
 
 		const int r = ping_send(p);
 		if (r < 0) {
-			_log.Log(LOG_ERROR, "Pinger: Can't ping host ", host, ": ", ping_get_error(p));
+			_log.Log(LOG_ERROR, "Pinger: Can't ping host %s: %s", host, ping_get_error(p));
 			break;
 		} else if (r > 0) {
 			bPingOK = true;
