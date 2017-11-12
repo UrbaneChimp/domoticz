@@ -170,9 +170,9 @@ bool CPinger::StartHardware()
 	m_stoprequested = false;
 	m_thread = boost::shared_ptr<boost::thread>(new boost::thread(boost::bind(&CPinger::Do_Work, this)));
 #ifndef WITH_LIBOPING
-	_log.Log(LOG_STATUS,"Pinger: Started");
+	_log.Log(LOG_STATUS, "Pinger: Started");
 #else // WITH_LIBOPING
-	_log.Log(LOG_STATUS,"Pinger: Started (using liboping)");
+	_log.Log(LOG_STATUS, "Pinger: Started (using liboping)");
 #endif // WITH_LIBOPING
 
 	return true;
