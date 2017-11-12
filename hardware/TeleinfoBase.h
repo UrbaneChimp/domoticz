@@ -2,21 +2,24 @@
 Domoticz Software : http://domoticz.com/
 File : TeleinfoBase.h
 Author : Blaise Thauvin
-Version : 1.0
+Version : 1.4
 Description : This class is used by various Teleinfo hardware decoders to process and display data
-			  It is currently used by EcoDevices, TeleinfoSerial
-			  Detailed information on the Teleinfo protocol can be found at (version 5, 16/03/2015)
-			  http://www.enedis.fr/sites/default/files/ERDF-NOI-CPT_02E.pdf
+		  It is currently used by EcoDevices, TeleinfoSerial
+		  Detailed information on the Teleinfo protocol can be found at (version 5, 16/03/2015)
+		  http://www.enedis.fr/sites/default/files/Enedis-NOI-CPT_02E.pdf
 
 History :
 0.1 2017-03-03 : Creation
 1.0 2017-03-15 : Release candidate
+1.3 2017-04-01 : Added RateLimit
+1.4 2017-04-13 : Added DataTimeout
 */
 
 #pragma once
 
 #include <iostream>
 #include "DomoticzHardware.h"
+#include "hardwaretypes.h"
 
 class CTeleinfoBase : public CDomoticzHardwareBase
 {
@@ -27,11 +30,16 @@ class CTeleinfoBase : public CDomoticzHardwareBase
 		~CTeleinfoBase();
 
 	private:
-		int AlertLevel(int Iinst, int Imax, int Isousc);
+		int AlertLevel(int Iinst, int Isousc, char* text);
+		P1Power m_p1power, m_p2power, m_p3power;
 
 	protected:
+		int m_iRateLimit;
+		int m_iDataTimeout;
+
 		typedef struct _tTeleinfo
 		{
+			std::string ADCO;
 			std::string PTEC;
 			std::string OPTARIF;
 			uint32_t ISOUSC;
@@ -39,10 +47,7 @@ class CTeleinfoBase : public CDomoticzHardwareBase
 			uint32_t IINST1;
 			uint32_t IINST2;
 			uint32_t IINST3;
-			uint32_t IMAX;
-			uint32_t IMAX1;
-			uint32_t IMAX2;
-			uint32_t IMAX3;
+			uint32_t PPOT;
 			uint32_t ADPS;
 			uint32_t PAPP;
 			uint32_t BASE;
@@ -58,13 +63,21 @@ class CTeleinfoBase : public CDomoticzHardwareBase
 			uint32_t BBRHPJR;
 			uint32_t BBRHCJR;
 			std::string DEMAIN;
-			uint32_t previous;
-			uint32_t checksum;
+			uint32_t pAlertPAPP;
+			uint32_t pAlertI1;
+			uint32_t pAlertI2;
+			uint32_t pAlertI3;
+			uint32_t pAlertPPOT;
+			uint32_t pAlertRate;
+			uint32_t pAlertColor;
+			uint32_t pAlertEJP;
+			uint32_t pAlertDemain;
 			std::string rate;
 			std::string tariff;
 			std::string color;
 			time_t   last;
 			bool    triphase;
+			int    CRCmode1;	 // really a bool, but with a special "un-initialized state"
 			_tTeleinfo()
 			{
 				ISOUSC = 0;
@@ -72,10 +85,7 @@ class CTeleinfoBase : public CDomoticzHardwareBase
 				IINST1 = 0;
 				IINST2 = 0;
 				IINST3 = 0;
-				IMAX = 0;
-				IMAX1 = 0;
-				IMAX2 = 0;
-				IMAX3 = 0;
+				PPOT = 0;
 				ADPS = 0;
 				PAPP = 0;
 				BASE = 0;
@@ -90,9 +100,18 @@ class CTeleinfoBase : public CDomoticzHardwareBase
 				BBRHCJW = 0;
 				BBRHPJR = 0;
 				BBRHCJR = 0;
-				previous =0;
+				pAlertPAPP = 10;
+				pAlertI1 = 10;
+				pAlertI2 = 10;
+				pAlertI3 = 10;
+				pAlertPPOT = 10;
+				pAlertRate = 10;
+				pAlertColor = 10;
+				pAlertEJP = 10;
+				pAlertDemain = 10;
 				last = 0;
 				triphase = false;
+				CRCmode1 = 255;	 // means "bool not initialized yet", will be when running CRC Check for the first time
 			}
 		} Teleinfo;
 
@@ -144,7 +163,7 @@ English
 				BBRHPJR  index peak rate red day
 				PTEC     current tariff period
 				IINST    instant current
-				IMAX     maximum current
+				PPOT     Potental (tri phases only)
 				PAPP     apparent power (VA)
 				MOTDETAT status code
 */

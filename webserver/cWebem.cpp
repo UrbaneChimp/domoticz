@@ -1204,7 +1204,7 @@ void cWebemRequestHandler::send_remove_cookie(reply& rep)
 {
 	std::stringstream sstr;
 	sstr << "SID=none";
-	sstr << "; path=/; Expires=" << make_web_time(0);
+	sstr << "; HttpOnly; path=/; Expires=" << make_web_time(0);
 	reply::add_header(&rep, "Set-Cookie", sstr.str(), false);
 }
 
@@ -1263,7 +1263,7 @@ void cWebemRequestHandler::send_cookie(reply& rep, const WebEmSession & session)
 {
 	std::stringstream sstr;
 	sstr << "SID=" << session.id << "_" << session.auth_token << "." << session.expires;
-	sstr << "; path=/; Expires=" << make_web_time(session.expires);
+	sstr << "; HttpOnly; path=/; Expires=" << make_web_time(session.expires);
 	reply::add_header(&rep, "Set-Cookie", sstr.str(), false);
 }
 
@@ -1585,6 +1585,9 @@ char *cWebemRequestHandler::strftime_t(const char *format, const time_t rawtime)
 
 void cWebemRequestHandler::handle_request(const request& req, reply& rep)
 {
+	if (_log.isTraceEnabled())	  
+		_log.Log(LOG_TRACE, "WEBH : Host:%s Uri;%s", req.host_address.c_str(), req.uri.c_str());
+
 	// Initialize session
 	WebEmSession session;
 	session.remote_host = req.host_address;
