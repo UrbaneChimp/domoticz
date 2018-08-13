@@ -1,0 +1,12 @@
+[Unit]
+Description=Domoticz Home Automation System
+
+[Service]
+ExecStart=/usr/bin/authbind /home/domoticz/current/domoticz -www 8080 -sslwww 443 -sslcert domoticz.lan.cert.pem -sslkey domoticz.lan.key.pem -ssldhparam dhparam.pem
+WorkingDirectory=/home/domoticz/current
+User=domoticz
+Restart=on-failure
+RestartSec=1m
+
+[Install]
+WantedBy=multi-user.target
