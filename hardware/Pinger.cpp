@@ -10,11 +10,14 @@
 #include "../webserver/cWebem.h"
 #include "../json/json.h"
 
-#ifndef WITH_LIBOPING
+#ifdef USE_BOOST_PING
 #include <boost/asio.hpp>
-#else // WITH_LIBOPING
+#elif defined USE_LIBOPING
 #include <oping.h>
-#endif // WITH_LIBOPING
+#elif defined USE_BIN_PING
+#include <stdlib.h>
+#include <stdio.h>
+#endif
 #include <boost/enable_shared_from_this.hpp>
 
 #include "pinger/icmp_header.h"
@@ -22,7 +25,7 @@
 
 #include <iostream>
 
-#ifndef WITH_LIBOPING
+#ifdef USE_BOOST_PING
 class pinger
 	: private boost::noncopyable
 {
@@ -150,7 +153,7 @@ private:
 	boost::posix_time::ptime time_sent_;
 	boost::asio::streambuf reply_buffer_;
 };
-#endif // WITH_LIBOPING
+#endif // USE_BOOST_PING
 
 CPinger::CPinger(const int ID, const int PollIntervalsec, const int PingTimeoutms) :
 	m_stoprequested(false),
@@ -180,11 +183,15 @@ bool CPinger::StartHardware()
 	//Start worker thread
 	m_stoprequested = false;
 	m_thread = boost::shared_ptr<boost::thread>(new boost::thread(boost::bind(&CPinger::Do_Work, this)));
-#ifndef WITH_LIBOPING
-	_log.Log(LOG_STATUS, "Pinger: Started");
-#else // WITH_LIBOPING
+#ifdef USE_BOOST_PING
+	_log.Log(LOG_STATUS, "Pinger: Started (using Boost.Asio)");
+#elif defined USE_LIBOPING
 	_log.Log(LOG_STATUS, "Pinger: Started (using liboping)");
-#endif // WITH_LIBOPING
+#elif defined USE_BIN_PING
+	_log.Log(LOG_STATUS, "Pinger: Started (using /bin/ping)");
+#else
+	#error "None of USE_BOOST_PING, USE_LIBOPING or USE_BIN_PING defined"
+#endif
 
 	return true;
 }
@@ -333,7 +340,7 @@ void CPinger::ReloadNodes()
 void CPinger::Do_Ping_Worker(const PingNode &Node)
 {
 	bool bPingOK = false;
-#ifndef WITH_LIBOPING
+#ifdef USE_BOOST_PING
 	boost::asio::io_service io_service;
 	try
 	{
@@ -353,7 +360,7 @@ void CPinger::Do_Ping_Worker(const PingNode &Node)
 	{
 		bPingOK = false;
 	}
-#else // WITH_LIBOPING
+#elif defined USE_LIBOPING
 	pingobj_t* p = NULL;
 
 	do {
@@ -389,7 +396,44 @@ void CPinger::Do_Ping_Worker(const PingNode &Node)
 	if (p != NULL) {
 		ping_destroy(p);
 	}
-#endif // WITH_LIBOPING
+#elif defined USE_BIN_PING
+	do {
+		const char* host = Node.IP.c_str();
+
+		// Construct command line
+		char cmd[320];
+		if (::snprintf(cmd, 320, "/bin/ping -q -n -c1 -w%d '%s' >/dev/null 2>&1", (m_iPingTimeoutms + 999) / 1000, host) < 0) {
+			_log.Log(LOG_ERROR, "Pinger: Can't construct command line for host %s", host);
+			break;
+		}
+
+		// Execute command
+		const int rc = ::system(cmd);
+		if (rc == -1) {
+			_log.Log(LOG_ERROR, "Pinger: Call to system() failed for host %s", host);
+			break;
+		} else if (!WIFEXITED(rc)) {
+			_log.Log(LOG_ERROR, "Pinger: Ping command exited abnormally for host %s", host);
+			break;
+		}
+
+		// Interpret command exit status
+		switch (WEXITSTATUS(rc)) {
+			case 0:
+				// Host responded
+				bPingOK = true;
+				break;
+			case 1:
+				// Response not received from host
+				break;
+			default:
+				// Ping command reported an error
+				_log.Log(LOG_ERROR, "Pinger: Ping command exited with status %d for host %s", WEXITSTATUS(rc), host);
+				break;
+		}
+
+	} while (false);
+#endif
 	UpdateNodeStatus(Node, bPingOK);
 	if (m_iThreadsRunning > 0) m_iThreadsRunning--;
 }
